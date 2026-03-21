@@ -83,6 +83,40 @@ button.ctrl:hover { border-color: #FD4B08; }
   letter-spacing: 0.05em; white-space: nowrap;
   width: 88px; text-align: right;
 }
+#export-btn {
+  background: none;
+  border: 1px solid #1e2a30;
+  color: #00FFEA;
+  border-radius: 3px;
+  height: 30px;
+  padding: 0 10px;
+  cursor: pointer;
+  display: flex; align-items: center; gap: 6px;
+  flex-shrink: 0;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s;
+}
+#export-btn:hover:not(:disabled) { border-color: #00FFEA; }
+#export-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+#export-btn.recording { border-color: #FF0055; color: #FF0055; }
+#export-progress {
+  display: none;
+  width: 60px;
+  height: 2px;
+  background: #1a2428;
+  border-radius: 1px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+#export-progress-bar {
+  height: 100%;
+  background: #00FFEA;
+  width: 0%;
+  transition: width 0.1s linear;
+}
 </style>
 </head>
 <body>
@@ -108,6 +142,13 @@ button.ctrl:hover { border-color: #FD4B08; }
   </button>
   <input type="range" id="scrubber" min="0" max="299" value="0" step="1">
   <span id="frame-counter">f 0 / 299</span>
+  <div id="export-progress"><div id="export-progress-bar"></div></div>
+  <button id="export-btn" title="Export one loop as WebM video">
+    <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+      <path d="M5.5 0v7M2.5 4.5l3 3 3-3M0 9.5h11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+    </svg>
+    EXPORT
+  </button>
 </div>
 
 <script>
@@ -567,6 +608,74 @@ function loop(ts) {
   setPlaying(true);
   requestAnimationFrame(loop);
 })();
+
+// ─── Export video (MediaRecorder — canvas → WebM) ─────────────────────────
+const exportBtn      = document.getElementById('export-btn');
+const exportProgress = document.getElementById('export-progress');
+const exportBar      = document.getElementById('export-progress-bar');
+
+exportBtn.addEventListener('click', () => {
+  if (exportBtn.disabled) return;
+
+  // Pause normal playback
+  setPlaying(false);
+
+  exportBtn.disabled = true;
+  exportBtn.classList.add('recording');
+  exportBtn.querySelector('span') && (exportBtn.querySelector('span').textContent = 'REC...');
+  exportBtn.innerHTML = `<svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="#FF0055"/></svg> REC...`;
+  exportProgress.style.display = 'block';
+  exportBar.style.width = '0%';
+
+  // Capture stream from canvas at full 60 fps
+  const stream   = canvas.captureStream(60);
+  const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+    ? 'video/webm;codecs=vp9'
+    : 'video/webm';
+  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 });
+  const chunks   = [];
+
+  recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+
+  recorder.onstop = () => {
+    const blob = new Blob(chunks, { type: mimeType });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = 'ante-bot-animation.webm';
+    a.click();
+    URL.revokeObjectURL(url);
+
+    // Reset UI
+    exportBtn.disabled = false;
+    exportBtn.classList.remove('recording');
+    exportBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 0v7M2.5 4.5l3 3 3-3M0 9.5h11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg> EXPORT`;
+    exportProgress.style.display = 'none';
+    exportBar.style.width = '0%';
+    setPlaying(true);
+  };
+
+  recorder.start();
+
+  // Render all frames programmatically at exactly 60fps
+  // (avoids any real-time timing jitter)
+  let recFrame = 0;
+  const frameDuration = 1000 / FPS;
+
+  function renderNext() {
+    if (recFrame >= TOTAL_FRAMES) {
+      recorder.stop();
+      return;
+    }
+    renderFrame(recFrame);
+    updateUI(recFrame);
+    exportBar.style.width = `${(recFrame / TOTAL_FRAMES) * 100}%`;
+    recFrame++;
+    setTimeout(renderNext, frameDuration);
+  }
+
+  renderNext();
+});
 </script>
 </body>
 </html>
