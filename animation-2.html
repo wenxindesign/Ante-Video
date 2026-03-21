@@ -193,12 +193,12 @@ function makeParticle(i, total, cfg) {
 
 const inner = Array.from({ length: 7  }, (_, i) => makeParticle(i, 7,  {
   rxMin: 100, rxMax: 145, ryMin: 48, ryMax: 72,
-  speedMin: 0.45, speedMax: 0.85, sizeMin: 2, sizeMax: 10,
+  speedMin: 0.45, speedMax: 0.85, sizeMin: 1.5, sizeMax: 7,
   alphaMin: 0.50, alphaMax: 0.90
 }));
 const outer = Array.from({ length: 11 }, (_, i) => makeParticle(i, 11, {
   rxMin: 165, rxMax: 230, ryMin: 82, ryMax: 120,
-  speedMin: 0.18, speedMax: 0.40, sizeMin: 1.5, sizeMax: 12,
+  speedMin: 0.18, speedMax: 0.40, sizeMin: 1, sizeMax: 8,
   alphaMin: 0.20, alphaMax: 0.60
 }));
 
