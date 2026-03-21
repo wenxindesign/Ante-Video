@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ANTE — Animation II</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #060606;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  font-family: 'IBM Plex Mono', 'SF Mono', monospace;
+}
+
+#stage {
+  position: relative;
+  width: 640px;
+  height: 400px;
+  border: 1px solid #111;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+#anim-canvas {
+  display: block;
+  width: 640px;
+  height: 400px;
+}
+
+/* Scanline overlay */
+#stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.04) 2px,
+    rgba(0,0,0,0.04) 4px
+  );
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
+
+/* Controls */
+#controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  width: 640px;
+  background: #0e0e0e;
+  border: 1px solid #1a1a1a;
+  border-radius: 4px;
+  padding: 12px 16px;
+}
+
+button.ctrl {
+  background: none;
+  border: 1px solid #222;
+  color: #FD4B08;
+  border-radius: 3px;
+  width: 30px;
+  height: 30px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: border-color 0.15s;
+}
+button.ctrl:hover { border-color: #FD4B08; }
+
+#scrubber {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 2px;
+  background: #1e1e1e;
+  border-radius: 1px;
+  outline: none;
+  cursor: pointer;
+}
+#scrubber::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+  background: #FD4B08;
+  cursor: pointer;
+}
+
+#frame-counter {
+  font-size: 10px;
+  color: #3a3a3a;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  width: 88px;
+  text-align: right;
+}
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <canvas id="anim-canvas" width="640" height="400"></canvas>
+</div>
+
+<div id="controls">
+  <button class="ctrl" id="restart-btn" title="Restart">
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+      <path d="M6.5 1.5V0L4 2.5 6.5 5V3a3.5 3.5 0 110 7 3.5 3.5 0 01-3.5-3.5H1A5.5 5.5 0 106.5 1.5z" fill="#FD4B08"/>
+    </svg>
+  </button>
+  <button class="ctrl" id="play-btn" title="Play / Pause (Space)">
+    <svg id="play-icon" width="13" height="13" viewBox="0 0 13 13" fill="none">
+      <path d="M2.5 1.5l9 5-9 5V1.5z" fill="#FD4B08"/>
+    </svg>
+    <svg id="pause-icon" width="13" height="13" viewBox="0 0 13 13" fill="none" style="display:none">
+      <rect x="1.5" y="1.5" width="3.5" height="10" fill="#FD4B08"/>
+      <rect x="8" y="1.5" width="3.5" height="10" fill="#FD4B08"/>
+    </svg>
+  </button>
+  <input type="range" id="scrubber" min="0" max="239" value="0" step="1">
+  <span id="frame-counter">f 0 / 239</span>
+</div>
+
+<script>
+// ─── Constants ─────────────────────────────────────────────────────────────
+const FPS          = 60;
+const TOTAL_FRAMES = 240;   // 4 s
+const OR = 253, OG = 75, OB = 8;  // #FD4B08
+
+// ─── Canvas ────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('anim-canvas');
+const ctx    = canvas.getContext('2d');
+const W = 640, H = 400, CX = W / 2, CY = H / 2;
+
+// ─── Bot image ─────────────────────────────────────────────────────────────
+const svgSrc = `<svg width="323" height="195" viewBox="0 0 323 195" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#c)">
+<path d="M65.5 5.75977H86.5V26.9598H65.5C65.5 26.9598 65.93 6.16977 65.5 5.75977Z" fill="#FD4B08"/>
+<path d="M293.06 67.26V84.26H274.25V50.61H256.16V34.33H236.26V49.89H219.98V33.97H198.63V15.89H180.9V0H142.55V15.89H123.74V33.62H104.2V49.18H86.47V33.62H65.85V49.18H48.48V84.27H28.94V66.18H0C0 65.09 0 100.19 0 100.19H28.22V132.39H47.4V164.23H65.85V179.43H85.03V194.79H123.38V180.52H197.91V194.79H237.71V181.24H256.16V165.32H273.89V131.67H293.43V101.28H322.37V67.27H293.06V67.26ZM123.5 131.33H94.56C94.56 131.33 95.16 98.05 94.56 97.39H123.5V131.33ZM228.07 131.33H199.13C199.13 131.33 199.73 98.05 199.13 97.39H228.07V131.33Z" fill="#FD4B08"/>
+<path d="M235.58 5.75977H256.58V26.9598H235.58C235.58 26.9598 236.01 6.16977 235.58 5.75977Z" fill="#FD4B08"/>
+</g>
+<defs><clipPath id="c"><rect width="322.37" height="194.78" fill="white"/></clipPath></defs>
+</svg>`;
+
+const botImg = new Image();
+let botLoaded = false;
+botImg.onload = () => { botLoaded = true; };
+botImg.src = URL.createObjectURL(new Blob([svgSrc], { type: 'image/svg+xml' }));
+
+// Bot layout — scale 0.86, centered
+const SC   = 0.86;
+const BW   = 323 * SC;   // ~277.8
+const BH   = 195 * SC;   // ~167.7
+const BX   = CX - BW / 2;
+const BY   = CY - BH / 2;
+
+// Eye rectangles (SVG coords → canvas coords, before breathing offset)
+function eyeRect(svgCx, svgCy, svgW, svgH) {
+  return { cx: BX + svgCx * SC, cy: BY + svgCy * SC, w: svgW * SC, h: svgH * SC };
+}
+const leftEye  = eyeRect(109.03, 114.36, 28.94, 33.94);
+const rightEye = eyeRect(213.60, 114.36, 28.94, 33.94);
+
+// ─── Particle swarm ────────────────────────────────────────────────────────
+function rnd(lo, hi) { return lo + Math.random() * (hi - lo); }
+
+function makeParticle(i, total, cfg) {
+  const dir = Math.random() < 0.5 ? 1 : -1; // cw or ccw
+  return {
+    phase:       (i / total) * Math.PI * 2,
+    rx:          rnd(cfg.rxMin, cfg.rxMax),
+    ry:          rnd(cfg.ryMin, cfg.ryMax),
+    speed:       rnd(cfg.speedMin, cfg.speedMax) * dir,
+    size:        rnd(cfg.sizeMin, cfg.sizeMax),
+    wobF:        rnd(1.5, 3.5),
+    wobA:        rnd(0.04, 0.10),
+    baseAlpha:   rnd(cfg.alphaMin, cfg.alphaMax),
+    glowBlur:    rnd(4, 12),
+    tiltX:       rnd(-0.15, 0.15),  // slight orbit tilt
+    tiltY:       rnd(-0.05, 0.05),
+  };
+}
+
+const inner = Array.from({ length: 7  }, (_, i) => makeParticle(i, 7,  {
+  rxMin: 100, rxMax: 145, ryMin: 48, ryMax: 72,
+  speedMin: 0.45, speedMax: 0.85, sizeMin: 2.5, sizeMax: 5,
+  alphaMin: 0.55, alphaMax: 0.90
+}));
+const outer = Array.from({ length: 11 }, (_, i) => makeParticle(i, 11, {
+  rxMin: 165, rxMax: 230, ryMin: 82, ryMax: 120,
+  speedMin: 0.18, speedMax: 0.40, sizeMin: 1.5, sizeMax: 3.5,
+  alphaMin: 0.22, alphaMax: 0.55
+}));
+
+// ─── Draw helpers ──────────────────────────────────────────────────────────
+function drawParticle(p, phase) {
+  const a = phase * p.speed * 2 + p.phase;
+  const wobble = 1 + p.wobA * Math.sin(phase * p.wobF + p.phase);
+  const x = CX + (Math.cos(a) * p.rx + Math.sin(a) * p.rx * p.tiltX) * wobble;
+  const y = CY + (Math.sin(a) * p.ry + Math.cos(a) * p.ry * p.tiltY) * wobble;
+
+  // Depth fade: dim when "behind" (top of y-orbit)
+  const depthAlpha = 0.55 + 0.45 * ((Math.sin(a) + 1) / 2);
+  const alpha = p.baseAlpha * depthAlpha;
+
+  ctx.save();
+  ctx.shadowColor  = `rgba(${OR},${OG},${OB},${alpha * 0.8})`;
+  ctx.shadowBlur   = p.glowBlur;
+  ctx.fillStyle    = `rgba(${OR},${OG},${OB},${alpha})`;
+  const s = p.size;
+  ctx.fillRect(x - s / 2, y - s / 2, s, s);
+  ctx.restore();
+}
+
+function drawEye(eye, breathScale, pulse) {
+  // Scale eye position from center
+  const ex = CX + (eye.cx - CX) * breathScale;
+  const ey = CY + (eye.cy - CY) * breathScale;
+  const ew = eye.w * breathScale;
+  const eh = eye.h * breathScale;
+
+  // Glow fill
+  ctx.save();
+  ctx.globalAlpha = pulse * 0.18;
+  ctx.fillStyle = `rgb(${OR},${OG},${OB})`;
+  ctx.fillRect(ex - ew / 2, ey - eh / 2, ew, eh);
+  ctx.restore();
+
+  // Radial glow bloom
+  const bloom = ctx.createRadialGradient(ex, ey, 0, ex, ey, ew * 2);
+  bloom.addColorStop(0,   `rgba(${OR},${OG},${OB},${pulse * 0.22})`);
+  bloom.addColorStop(0.5, `rgba(${OR},${OG},${OB},${pulse * 0.06})`);
+  bloom.addColorStop(1,   'transparent');
+  ctx.fillStyle = bloom;
+  ctx.fillRect(ex - ew * 2, ey - ew * 2, ew * 4, ew * 4);
+}
+
+// ─── Main render ───────────────────────────────────────────────────────────
+function renderFrame(frame) {
+  const t     = frame / TOTAL_FRAMES;         // 0 → 1
+  const phase = t * Math.PI * 2;              // 0 → 2π
+
+  // Background
+  ctx.fillStyle = '#060606';
+  ctx.fillRect(0, 0, W, H);
+
+  // Ambient aura (breathes)
+  const auraR = 175 + 18 * Math.sin(phase);
+  const aura  = ctx.createRadialGradient(CX, CY + 8, 0, CX, CY + 8, auraR);
+  aura.addColorStop(0,    `rgba(${OR},${OG},${OB},0.10)`);
+  aura.addColorStop(0.45, `rgba(${OR},${OG},${OB},0.04)`);
+  aura.addColorStop(1,    'transparent');
+  ctx.fillStyle = aura;
+  ctx.fillRect(0, 0, W, H);
+
+  // Floor shadow
+  const shadow = ctx.createRadialGradient(CX, CY + BH * 0.54, 0, CX, CY + BH * 0.54, 120);
+  shadow.addColorStop(0,   `rgba(${OR},${OG},${OB},0.07)`);
+  shadow.addColorStop(1,   'transparent');
+  ctx.fillStyle = shadow;
+  ctx.fillRect(0, 0, W, H);
+
+  // Outer particles (behind bot)
+  outer.forEach(p => drawParticle(p, phase));
+
+  // Bot
+  const breathScale = 1 + 0.014 * Math.sin(phase);
+  if (botLoaded) {
+    const bw = BW * breathScale;
+    const bh = BH * breathScale;
+    const bx = CX - bw / 2;
+    const by = CY - bh / 2;
+
+    ctx.save();
+    ctx.shadowColor = `rgba(${OR},${OG},${OB},${0.28 + 0.10 * Math.sin(phase)})`;
+    ctx.shadowBlur  = 18 + 6 * Math.sin(phase);
+    ctx.drawImage(botImg, bx, by, bw, bh);
+    ctx.restore();
+
+    // Eye glows (pulse twice per loop — feels more alive)
+    const eyePulse = 0.55 + 0.45 * Math.sin(phase * 2 + Math.PI * 0.25);
+    drawEye(leftEye,  breathScale, eyePulse);
+    drawEye(rightEye, breathScale, eyePulse);
+  }
+
+  // Inner particles (in front of bot)
+  inner.forEach(p => drawParticle(p, phase));
+
+  // Vignette
+  const vig = ctx.createRadialGradient(CX, CY, W * 0.28, CX, CY, W * 0.72);
+  vig.addColorStop(0, 'transparent');
+  vig.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, W, H);
+}
+
+// ─── Playback state ────────────────────────────────────────────────────────
+const scrubber     = document.getElementById('scrubber');
+const frameCounter = document.getElementById('frame-counter');
+const playBtn      = document.getElementById('play-btn');
+const playIcon     = document.getElementById('play-icon');
+const pauseIcon    = document.getElementById('pause-icon');
+const restartBtn   = document.getElementById('restart-btn');
+
+let currentFrame = 0;
+let playing      = true;
+let scrubbing    = false;
+let lastTS       = null;
+
+function setPlaying(v) {
+  playing = v;
+  lastTS  = null;
+  playIcon.style.display  = v ? 'none'  : 'block';
+  pauseIcon.style.display = v ? 'block' : 'none';
+}
+
+playBtn.addEventListener('click', () => setPlaying(!playing));
+restartBtn.addEventListener('click', () => {
+  currentFrame = 0;
+  if (!playing) { renderFrame(0); updateUI(0); }
+});
+
+scrubber.addEventListener('mousedown', () => { scrubbing = true; });
+scrubber.addEventListener('input', () => {
+  currentFrame = parseInt(scrubber.value);
+  renderFrame(currentFrame);
+  updateUI(currentFrame);
+});
+scrubber.addEventListener('mouseup', () => { scrubbing = false; lastTS = null; });
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); setPlaying(!playing); }
+});
+
+function updateUI(f) {
+  scrubber.value = f;
+  frameCounter.textContent = `f ${f} / ${TOTAL_FRAMES - 1}`;
+}
+
+// ─── RAF loop ──────────────────────────────────────────────────────────────
+function loop(ts) {
+  if (!scrubbing && playing) {
+    if (lastTS !== null) {
+      currentFrame = (currentFrame + (ts - lastTS) / 1000 * FPS) % TOTAL_FRAMES;
+    }
+    lastTS = ts;
+  }
+  const f = Math.round(currentFrame) % TOTAL_FRAMES;
+  renderFrame(f);
+  updateUI(f);
+  requestAnimationFrame(loop);
+}
+
+(function waitForBot() {
+  if (!botLoaded) { setTimeout(waitForBot, 30); return; }
+  setPlaying(true);
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
