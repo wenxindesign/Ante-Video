@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ANTE — Animation III</title>
+<link href="https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #020408;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+#stage {
+  position: relative;
+  width: 640px;
+  height: 400px;
+  border: 1px solid #0e1a20;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+#anim-canvas { display: block; width: 640px; height: 400px; }
+
+/* CRT scanline overlay */
+#stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(0,0,0,0.06) 3px,
+    rgba(0,0,0,0.06) 4px
+  );
+  pointer-events: none;
+}
+
+/* Controls */
+#controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  width: 640px;
+  background: #090d10;
+  border: 1px solid #141e24;
+  border-radius: 4px;
+  padding: 12px 16px;
+}
+button.ctrl {
+  background: none;
+  border: 1px solid #1e2a30;
+  color: #FD4B08;
+  border-radius: 3px;
+  width: 30px; height: 30px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: border-color 0.15s;
+}
+button.ctrl:hover { border-color: #FD4B08; }
+#scrubber {
+  flex: 1;
+  -webkit-appearance: none; appearance: none;
+  height: 2px; background: #1a2428;
+  border-radius: 1px; outline: none; cursor: pointer;
+}
+#scrubber::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 8px; height: 8px;
+  border-radius: 1px; background: #FD4B08; cursor: pointer;
+}
+#frame-counter {
+  font-size: 10px; color: #2e3e48;
+  letter-spacing: 0.05em; white-space: nowrap;
+  width: 88px; text-align: right;
+}
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <canvas id="anim-canvas" width="640" height="400"></canvas>
+</div>
+
+<div id="controls">
+  <button class="ctrl" id="restart-btn" title="Restart">
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+      <path d="M6.5 1.5V0L4 2.5 6.5 5V3a3.5 3.5 0 110 7 3.5 3.5 0 01-3.5-3.5H1A5.5 5.5 0 106.5 1.5z" fill="#FD4B08"/>
+    </svg>
+  </button>
+  <button class="ctrl" id="play-btn" title="Play / Pause (Space)">
+    <svg id="play-icon" width="13" height="13" viewBox="0 0 13 13" fill="none">
+      <path d="M2.5 1.5l9 5-9 5V1.5z" fill="#FD4B08"/>
+    </svg>
+    <svg id="pause-icon" width="13" height="13" viewBox="0 0 13 13" fill="none" style="display:none">
+      <rect x="1.5" y="1.5" width="3.5" height="10" fill="#FD4B08"/>
+      <rect x="8" y="1.5" width="3.5" height="10" fill="#FD4B08"/>
+    </svg>
+  </button>
+  <input type="range" id="scrubber" min="0" max="299" value="0" step="1">
+  <span id="frame-counter">f 0 / 299</span>
+</div>
+
+<script>
+// ─── Constants ─────────────────────────────────────────────────────────────
+const FPS          = 60;
+const TOTAL_FRAMES = 300;  // 5 s
+const OR = 253, OG = 75, OB = 8;       // #FD4B08
+const CR = 0,   CG = 255, CB = 234;    // #00FFEA  cyan
+const W = 640, H = 400, CX = W/2, CY = H/2;
+
+// ─── Canvas ────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('anim-canvas');
+const ctx    = canvas.getContext('2d');
+
+// ─── Bot SVG ───────────────────────────────────────────────────────────────
+const svgSrc = `<svg width="323" height="195" viewBox="0 0 323 195" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#c)">
+<path d="M65.5 5.75977H86.5V26.9598H65.5C65.5 26.9598 65.93 6.16977 65.5 5.75977Z" fill="#FD4B08"/>
+<path d="M293.06 67.26V84.26H274.25V50.61H256.16V34.33H236.26V49.89H219.98V33.97H198.63V15.89H180.9V0H142.55V15.89H123.74V33.62H104.2V49.18H86.47V33.62H65.85V49.18H48.48V84.27H28.94V66.18H0C0 65.09 0 100.19 0 100.19H28.22V132.39H47.4V164.23H65.85V179.43H85.03V194.79H123.38V180.52H197.91V194.79H237.71V181.24H256.16V165.32H273.89V131.67H293.43V101.28H322.37V67.27H293.06V67.26ZM123.5 131.33H94.56C94.56 131.33 95.16 98.05 94.56 97.39H123.5V131.33ZM228.07 131.33H199.13C199.13 131.33 199.73 98.05 199.13 97.39H228.07V131.33Z" fill="#FD4B08"/>
+<path d="M235.58 5.75977H256.58V26.9598H235.58C235.58 26.9598 236.01 6.16977 235.58 5.75977Z" fill="#FD4B08"/>
+</g>
+<defs><clipPath id="c"><rect width="322.37" height="194.78" fill="white"/></clipPath></defs>
+</svg>`;
+
+const botImg = new Image();
+let botLoaded = false;
+botImg.onload = () => { botLoaded = true; };
+botImg.src = URL.createObjectURL(new Blob([svgSrc], { type: 'image/svg+xml' }));
+
+const SC = 0.86;
+const BW = 323 * SC, BH = 195 * SC;
+const BX = CX - BW/2, BY = CY - BH/2;
+
+// Pre-rendered bot canvases (tinted)
+let botOrange, botRed, botCyan;
+function prerenderBots() {
+  function tint(color) {
+    const c = document.createElement('canvas');
+    c.width = BW | 0; c.height = BH | 0;
+    const cx = c.getContext('2d');
+    cx.drawImage(botImg, 0, 0, BW, BH);
+    cx.globalCompositeOperation = 'source-in';
+    cx.fillStyle = color;
+    cx.fillRect(0, 0, BW, BH);
+    return c;
+  }
+  botOrange = tint('#FD4B08');
+  botRed    = tint('#FF1A00');
+  botCyan   = tint('#00FFEA');
+}
+
+// Eye positions (for glow at the end)
+const SC2 = SC;
+function eyeRect(svgCx, svgCy, svgW, svgH) {
+  return { cx: BX + svgCx*SC2, cy: BY + svgCy*SC2, w: svgW*SC2, h: svgH*SC2 };
+}
+const leftEye  = eyeRect(109.03, 114.36, 28.94, 33.94);
+const rightEye = eyeRect(213.60, 114.36, 28.94, 33.94);
+
+// ─── Deterministic noise ───────────────────────────────────────────────────
+function det(n) {
+  const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+// ─── Glitch curve ──────────────────────────────────────────────────────────
+function getGlitch(frame) {
+  const t = frame / TOTAL_FRAMES;
+  // Base decay
+  const base  = Math.pow(Math.max(0, 1 - t * 1.4), 0.75);
+  // Spikes for drama
+  const sp1   = Math.max(0, 1 - Math.abs(t - 0.14) * 35) * 0.55;
+  const sp2   = Math.max(0, 1 - Math.abs(t - 0.26) * 45) * 0.45;
+  const sp3   = Math.max(0, 1 - Math.abs(t - 0.58) * 70) * 0.30;
+  return Math.min(1, base + sp1 + sp2 + sp3);
+}
+
+function getBotOpacity(frame) {
+  const t = frame / TOTAL_FRAMES;
+  return Math.min(1, Math.max(0, (t - 0.08) / 0.32));
+}
+
+function getParticleAlpha(frame) {
+  const t = frame / TOTAL_FRAMES;
+  return Math.min(1, Math.max(0, (t - 0.80) / 0.15));
+}
+
+function getBreathScale(frame) {
+  const t = frame / TOTAL_FRAMES;
+  const onset = Math.min(1, Math.max(0, (t - 0.78) / 0.10));
+  const phase = (t - 0.78) * Math.PI * 2 * 1.2;
+  return 1 + 0.013 * Math.sin(phase) * onset;
+}
+
+// ─── Particle swarm (same as anim-2, fades in at end) ─────────────────────
+function rnd(lo, hi) { return lo + Math.random() * (hi - lo); }
+function mkParticle(i, total, cfg) {
+  const dir = Math.random() < 0.5 ? 1 : -1;
+  return {
+    phase:     (i / total) * Math.PI * 2,
+    rx: rnd(cfg.rxMin, cfg.rxMax), ry: rnd(cfg.ryMin, cfg.ryMax),
+    speed: rnd(cfg.speedMin, cfg.speedMax) * dir,
+    size: rnd(cfg.sizeMin, cfg.sizeMax),
+    wobF: rnd(1.5, 3.5), wobA: rnd(0.04, 0.10),
+    baseAlpha: rnd(cfg.alphaMin, cfg.alphaMax),
+    glowBlur: rnd(5, 18),
+    tiltX: rnd(-0.15, 0.15), tiltY: rnd(-0.05, 0.05),
+  };
+}
+const innerP = Array.from({length:7},  (_,i)=>mkParticle(i,7,{rxMin:100,rxMax:145,ryMin:48,ryMax:72,speedMin:0.45,speedMax:0.85,sizeMin:1.5,sizeMax:7,alphaMin:0.50,alphaMax:0.90}));
+const outerP = Array.from({length:11}, (_,i)=>mkParticle(i,11,{rxMin:165,rxMax:230,ryMin:82,ryMax:120,speedMin:0.18,speedMax:0.40,sizeMin:1,sizeMax:8,alphaMin:0.20,alphaMax:0.60}));
+
+function drawParticle(p, phase, masterAlpha) {
+  if (masterAlpha <= 0) return;
+  const a = phase * p.speed * 2 + p.phase;
+  const wob = 1 + p.wobA * Math.sin(phase * p.wobF + p.phase);
+  const x = CX + (Math.cos(a)*p.rx + Math.sin(a)*p.rx*p.tiltX) * wob;
+  const y = CY + (Math.sin(a)*p.ry + Math.cos(a)*p.ry*p.tiltY) * wob;
+  const depth = 0.55 + 0.45 * ((Math.sin(a)+1)/2);
+  const alpha = p.baseAlpha * depth * masterAlpha;
+  ctx.save();
+  ctx.shadowColor = `rgba(${OR},${OG},${OB},${alpha*0.8})`;
+  ctx.shadowBlur  = p.glowBlur + p.size * 1.5;
+  ctx.fillStyle   = `rgba(${OR},${OG},${OB},${alpha})`;
+  const s = p.size;
+  ctx.fillRect(x - s/2, y - s/2, s, s);
+  ctx.restore();
+}
+
+// ─── Draw: noise/static ────────────────────────────────────────────────────
+function drawNoise(frame, intensity) {
+  if (intensity <= 0.01) return;
+  const f = frame | 0;
+
+  // Full-canvas noise wash at high intensity
+  if (intensity > 0.6) {
+    ctx.fillStyle = `rgba(${CR},${CG},${CB},${(intensity-0.6)*0.08})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Horizontal glitch bars
+  const nbars = Math.floor(intensity * 22);
+  for (let i = 0; i < nbars; i++) {
+    const s = f*17 + i*31;
+    const y = Math.floor(det(s) * H);
+    const h = 1 + Math.floor(det(s+1) * 4);
+    const a = det(s+2) * intensity * 0.55;
+    ctx.fillStyle = det(s+3) > 0.45
+      ? `rgba(${CR},${CG},${CB},${a})`
+      : `rgba(255,0,85,${a*0.6})`;
+    ctx.fillRect(0, y, W, h);
+  }
+
+  // Pixel noise
+  const npx = Math.floor(intensity * 500);
+  for (let i = 0; i < npx; i++) {
+    const s = f*7 + i*11;
+    const x = Math.floor(det(s) * W);
+    const y = Math.floor(det(s+50) * H);
+    const a = det(s+100) * intensity * 0.75;
+    ctx.fillStyle = det(s+150) > 0.5
+      ? `rgba(${CR},${CG},${CB},${a})`
+      : `rgba(220,220,220,${a})`;
+    ctx.fillRect(x, y, 1, 1);
+  }
+
+  // Occasional wide displacement bar (random horizontal tear)
+  if (intensity > 0.4 && det(f*3+77) < intensity*0.35) {
+    const ty = Math.floor(det(f*5+11) * H);
+    const th = 2 + Math.floor(det(f*5+22) * 6);
+    const tx = (det(f*5+33) - 0.5) * intensity * 80;
+    ctx.save();
+    ctx.globalAlpha = intensity * 0.8;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = `rgba(${CR},${CG},${CB},0.15)`;
+    ctx.fillRect(0, ty, W, th);
+    ctx.restore();
+  }
+}
+
+// ─── Draw: glitched bot ────────────────────────────────────────────────────
+function drawGlitchedBot(frame, glitch, opacity) {
+  if (!botOrange || opacity <= 0) return;
+  const f = frame | 0;
+
+  ctx.save();
+  ctx.globalAlpha = opacity;
+
+  if (glitch < 0.05) {
+    // Clean: just draw with shadow glow
+    ctx.shadowColor = `rgba(${OR},${OG},${OB},0.32)`;
+    ctx.shadowBlur  = 20;
+    ctx.drawImage(botOrange, BX, BY, BW, BH);
+    ctx.restore();
+    return;
+  }
+
+  // Horizontal strip displacement
+  const numStrips = 24;
+  const stripH    = BH / numStrips;
+  const changeTick = Math.floor(f / 2); // update every 2 frames
+
+  for (let i = 0; i < numStrips; i++) {
+    const seed   = changeTick * 1000 + i * 37;
+    const displace = det(seed) < glitch * 0.60;
+    const offset   = displace ? (det(seed+500) - 0.5) * glitch * 55 : 0;
+    const sy = i * stripH;
+    const sh = stripH + 1; // +1 to avoid hairline gaps
+    ctx.drawImage(botOrange, 0, sy, BW, sh, BX + offset, BY + sy, BW, sh);
+  }
+  ctx.restore();
+
+  // Chromatic aberration
+  if (glitch > 0.12) {
+    const aberr = glitch * 12;
+    const aberAlpha = Math.min(glitch * 0.65, 0.50);
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.globalAlpha = aberAlpha * opacity;
+    ctx.drawImage(botRed,  BX + aberr, BY, BW, BH);
+    ctx.drawImage(botCyan, BX - aberr, BY, BW, BH);
+    ctx.restore();
+  }
+}
+
+// ─── Draw: eye glow (clean phase) ─────────────────────────────────────────
+function drawEyes(frame, cleanness) {
+  if (cleanness <= 0) return;
+  const t = frame / TOTAL_FRAMES;
+  const pulse = 0.55 + 0.45 * Math.sin(t * Math.PI * 2 * 2.5);
+  [leftEye, rightEye].forEach(eye => {
+    ctx.save();
+    ctx.globalAlpha = cleanness * pulse * 0.18;
+    ctx.fillStyle = `rgb(${OR},${OG},${OB})`;
+    ctx.fillRect(eye.cx - eye.w/2, eye.cy - eye.h/2, eye.w, eye.h);
+    ctx.restore();
+    const bloom = ctx.createRadialGradient(eye.cx, eye.cy, 0, eye.cx, eye.cy, eye.w*2);
+    bloom.addColorStop(0, `rgba(${OR},${OG},${OB},${cleanness*pulse*0.20})`);
+    bloom.addColorStop(1, 'transparent');
+    ctx.fillStyle = bloom;
+    ctx.fillRect(eye.cx - eye.w*2, eye.cy - eye.w*2, eye.w*4, eye.w*4);
+  });
+}
+
+// ─── Draw: scan line wipe ──────────────────────────────────────────────────
+function drawScanWipe(frame) {
+  // Sweeps f230 → f270
+  if (frame < 228 || frame > 274) return;
+  const progress = (frame - 228) / 46;
+  const scanY = progress * H;
+
+  // Leading edge glow
+  const g = ctx.createLinearGradient(0, scanY - 8, 0, scanY + 4);
+  g.addColorStop(0, 'transparent');
+  g.addColorStop(0.7, `rgba(${CR},${CG},${CB},0.55)`);
+  g.addColorStop(1, 'transparent');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, scanY - 8, W, 12);
+
+  // Subtle "already scanned" tint above scan line
+  ctx.save();
+  ctx.globalAlpha = 0.03;
+  ctx.fillStyle = `rgb(${CR},${CG},${CB})`;
+  ctx.fillRect(0, 0, W, scanY);
+  ctx.restore();
+}
+
+// ─── Draw: HUD ─────────────────────────────────────────────────────────────
+function drawHUD(frame, glitch) {
+  const t  = frame / TOTAL_FRAMES;
+  const f  = frame | 0;
+  const cA = 0.55; // base cyan alpha for clean
+
+  ctx.save();
+
+  // Corner brackets
+  ctx.strokeStyle = `rgba(${CR},${CG},${CB},0.30)`;
+  ctx.lineWidth   = 1;
+  const L = 18, B = 14;
+  const corners = [[L,L,1,1],[W-L,L,-1,1],[L,H-L,1,-1],[W-L,H-L,-1,-1]];
+  corners.forEach(([x,y,sx,sy]) => {
+    ctx.beginPath();
+    ctx.moveTo(x, y + sy*B); ctx.lineTo(x, y); ctx.lineTo(x + sx*B, y);
+    ctx.stroke();
+  });
+
+  // HUD font
+  ctx.font = '13px VT323, monospace';
+  ctx.letterSpacing = '0.05em';
+
+  // Top-left status
+  if (t < 0.22) {
+    const blink = det(f * 4) > 0.45;
+    if (blink) {
+      ctx.fillStyle = `rgba(255,0,85,${0.8})`;
+      ctx.fillText('SIGNAL_LOST', 26, 36);
+    }
+  } else if (t < 0.72) {
+    const flicker = det(f * 3 + 9) > 0.28;
+    if (flicker) {
+      ctx.fillStyle = `rgba(${CR},${CG},${CB},${cA})`;
+      ctx.fillText('ACQUIRING...', 26, 36);
+    }
+  } else {
+    const fadeIn = Math.min(1, (t - 0.72) / 0.12);
+    ctx.fillStyle = `rgba(${CR},${CG},${CB},${fadeIn * 0.75})`;
+    ctx.fillText('SYNC_COMPLETE', 26, 36);
+  }
+
+  // Signal strength bar (bottom-left)
+  const sigStr  = Math.min(1, Math.max(0, (t - 0.05) / 0.65));
+  const barW    = 72;
+  ctx.fillStyle = `rgba(${CR},${CG},${CB},0.30)`;
+  ctx.fillText('SIG', 26, H - 36);
+  ctx.strokeStyle = `rgba(${CR},${CG},${CB},0.28)`;
+  ctx.strokeRect(26, H - 30, barW, 5);
+  ctx.fillStyle = `rgba(${CR},${CG},${CB},0.65)`;
+  ctx.fillRect(27, H - 29, (barW - 2) * sigStr, 3);
+
+  // Bottom-right tag
+  ctx.fillStyle = `rgba(${CR},${CG},${CB},0.22)`;
+  ctx.fillText('ANTE_BOT.v2', W - 114, H - 24);
+
+  // Glitch artifact: random scrambled text flashes
+  if (glitch > 0.35 && det(f * 11 + 3) < glitch * 0.4) {
+    const chars = '01█▓░ABCDEF:/\\><';
+    const str   = Array.from({length: 10}, (_,i) =>
+      chars[Math.floor(det(f*13+i*7) * chars.length)]
+    ).join('');
+    const tx = 20 + Math.floor(det(f*17+1) * (W - 180));
+    const ty = 40 + Math.floor(det(f*17+2) * (H - 80));
+    ctx.fillStyle = `rgba(${CR},${CG},${CB},${glitch * 0.45})`;
+    ctx.fillText(str, tx, ty);
+  }
+
+  ctx.restore();
+}
+
+// ─── Draw: ambient aura ────────────────────────────────────────────────────
+function drawAura(frame, cleanness) {
+  if (cleanness <= 0) return;
+  const t = frame / TOTAL_FRAMES;
+  const auraR = (155 + 18 * Math.sin(t * Math.PI * 2 * 1.2)) * cleanness;
+  const aura  = ctx.createRadialGradient(CX, CY+8, 0, CX, CY+8, auraR);
+  aura.addColorStop(0,    `rgba(${OR},${OG},${OB},${0.10*cleanness})`);
+  aura.addColorStop(0.5,  `rgba(${OR},${OG},${OB},${0.04*cleanness})`);
+  aura.addColorStop(1,    'transparent');
+  ctx.fillStyle = aura;
+  ctx.fillRect(0, 0, W, H);
+}
+
+// ─── Main render ───────────────────────────────────────────────────────────
+function renderFrame(frame) {
+  const t         = frame / TOTAL_FRAMES;
+  const phase     = t * Math.PI * 2;
+  const glitch    = getGlitch(frame);
+  const botOp     = getBotOpacity(frame);
+  const pAlpha    = getParticleAlpha(frame);
+  const bScale    = getBreathScale(frame);
+  const cleanness = Math.max(0, 1 - glitch * 2.2);   // 0 when glitchy, 1 when clean
+
+  // Background
+  ctx.fillStyle = '#020408';
+  ctx.fillRect(0, 0, W, H);
+
+  // Ambient aura (only when mostly clean)
+  drawAura(frame, cleanness);
+
+  // Outer particles (behind bot)
+  outerP.forEach(p => drawParticle(p, phase, pAlpha));
+
+  // Bot — breathing scale applied when clean
+  ctx.save();
+  if (cleanness > 0.5) {
+    ctx.translate(CX, CY);
+    ctx.scale(bScale, bScale);
+    ctx.translate(-CX, -CY);
+  }
+  drawGlitchedBot(frame, glitch, botOp);
+  ctx.restore();
+
+  // Eyes
+  drawEyes(frame, cleanness * Math.min(1, botOp * 2));
+
+  // Inner particles (in front of bot)
+  innerP.forEach(p => drawParticle(p, phase, pAlpha));
+
+  // Scan wipe
+  drawScanWipe(frame);
+
+  // Noise
+  drawNoise(frame, glitch);
+
+  // HUD
+  drawHUD(frame, glitch);
+
+  // Vignette
+  const vig = ctx.createRadialGradient(CX, CY, W*0.25, CX, CY, W*0.72);
+  vig.addColorStop(0, 'transparent');
+  vig.addColorStop(1, 'rgba(0,0,0,0.60)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, W, H);
+}
+
+// ─── Playback ──────────────────────────────────────────────────────────────
+const scrubber     = document.getElementById('scrubber');
+const frameCounter = document.getElementById('frame-counter');
+const playBtn      = document.getElementById('play-btn');
+const playIcon     = document.getElementById('play-icon');
+const pauseIcon    = document.getElementById('pause-icon');
+const restartBtn   = document.getElementById('restart-btn');
+
+let currentFrame = 0;
+let playing      = true;
+let scrubbing    = false;
+let lastTS       = null;
+
+function setPlaying(v) {
+  playing = v; lastTS = null;
+  playIcon.style.display  = v ? 'none'  : 'block';
+  pauseIcon.style.display = v ? 'block' : 'none';
+}
+playBtn.addEventListener('click', () => setPlaying(!playing));
+restartBtn.addEventListener('click', () => {
+  currentFrame = 0;
+  if (!playing) { renderFrame(0); updateUI(0); }
+});
+scrubber.addEventListener('mousedown', () => { scrubbing = true; });
+scrubber.addEventListener('input', () => {
+  currentFrame = parseInt(scrubber.value);
+  renderFrame(currentFrame); updateUI(currentFrame);
+});
+scrubber.addEventListener('mouseup', () => { scrubbing = false; lastTS = null; });
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); setPlaying(!playing); }
+});
+function updateUI(f) {
+  scrubber.value = f;
+  frameCounter.textContent = `f ${f} / ${TOTAL_FRAMES-1}`;
+}
+
+function loop(ts) {
+  if (!scrubbing && playing) {
+    if (lastTS !== null)
+      currentFrame = (currentFrame + (ts - lastTS) / 1000 * FPS) % TOTAL_FRAMES;
+    lastTS = ts;
+  }
+  const f = Math.round(currentFrame) % TOTAL_FRAMES;
+  renderFrame(f);
+  updateUI(f);
+  requestAnimationFrame(loop);
+}
+
+(function waitForBot() {
+  if (!botLoaded) { setTimeout(waitForBot, 30); return; }
+  prerenderBots();
+  setPlaying(true);
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
