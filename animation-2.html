@@ -185,7 +185,7 @@ function makeParticle(i, total, cfg) {
     wobF:        rnd(1.5, 3.5),
     wobA:        rnd(0.04, 0.10),
     baseAlpha:   rnd(cfg.alphaMin, cfg.alphaMax),
-    glowBlur:    rnd(4, 12),
+    glowBlur:    rnd(5, 18),
     tiltX:       rnd(-0.15, 0.15),  // slight orbit tilt
     tiltY:       rnd(-0.05, 0.05),
   };
@@ -193,13 +193,13 @@ function makeParticle(i, total, cfg) {
 
 const inner = Array.from({ length: 7  }, (_, i) => makeParticle(i, 7,  {
   rxMin: 100, rxMax: 145, ryMin: 48, ryMax: 72,
-  speedMin: 0.45, speedMax: 0.85, sizeMin: 2.5, sizeMax: 5,
-  alphaMin: 0.55, alphaMax: 0.90
+  speedMin: 0.45, speedMax: 0.85, sizeMin: 2, sizeMax: 10,
+  alphaMin: 0.50, alphaMax: 0.90
 }));
 const outer = Array.from({ length: 11 }, (_, i) => makeParticle(i, 11, {
   rxMin: 165, rxMax: 230, ryMin: 82, ryMax: 120,
-  speedMin: 0.18, speedMax: 0.40, sizeMin: 1.5, sizeMax: 3.5,
-  alphaMin: 0.22, alphaMax: 0.55
+  speedMin: 0.18, speedMax: 0.40, sizeMin: 1.5, sizeMax: 12,
+  alphaMin: 0.20, alphaMax: 0.60
 }));
 
 // ─── Draw helpers ──────────────────────────────────────────────────────────
@@ -215,7 +215,7 @@ function drawParticle(p, phase) {
 
   ctx.save();
   ctx.shadowColor  = `rgba(${OR},${OG},${OB},${alpha * 0.8})`;
-  ctx.shadowBlur   = p.glowBlur;
+  ctx.shadowBlur   = p.glowBlur + p.size * 1.5;
   ctx.fillStyle    = `rgba(${OR},${OG},${OB},${alpha})`;
   const s = p.size;
   ctx.fillRect(x - s / 2, y - s / 2, s, s);
